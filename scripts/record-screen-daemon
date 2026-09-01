@@ -22,8 +22,18 @@ done
 OUTPUT_DIR="${XDG_VIDEOS_DIR:-$HOME/Videos}"
 RUNTIME="${XDG_RUNTIME_DIR:-/tmp}"
 
-DESK_SOURCE="alsa_output.usb-Logitech_G733_Gaming_Headset-00.analog-stereo.monitor"
-MIC_SOURCE="alsa_input.usb-0c76_USB_PnP_Audio_Device-00.mono-fallback"
+# Audio endpoints. Auto-detected so no hardware-specific names live in the
+# repo, but you can pin them with RECORD_DESK_SOURCE / RECORD_MIC_SOURCE
+# (see `pactl list short sinks` / `pactl list short sources`).
+DESK_SOURCE="${RECORD_DESK_SOURCE:-$(pactl get-default-sink 2>/dev/null).monitor}"
+MIC_SOURCE="${RECORD_MIC_SOURCE:-}"
+if [[ -z $MIC_SOURCE ]]; then
+  MIC_SOURCE="$(pactl get-default-source 2>/dev/null)"
+  if [[ $MIC_SOURCE == *.monitor ]]; then
+    # Default source is an output monitor; pick the first real input instead.
+    MIC_SOURCE="$(pactl list short sources 2>/dev/null | awk '$2 !~ /\.monitor$/ {print $2; exit}')"
+  fi
+fi
 
 mkdir -p "$OUTPUT_DIR"
 FINAL="$OUTPUT_DIR/rec-$(date +'%Y-%m-%d_%H-%M-%S').mkv"
