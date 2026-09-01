@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install omarchy-screenrecorder.
+# Install omarchy-capture-wf.
 #
 # Fully automatic, no manual steps required. Installs:
 #   1. record-screen (toggle) + record-screen-daemon  -> ~/.local/bin

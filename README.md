@@ -1,4 +1,4 @@
-# omarchy-screenrecorder
+# omarchy-capture-wf
 
 [English](#english) · [Español](#espa%C3%B1ol)
 
@@ -14,7 +14,7 @@ A custom adaptation of a screen recorder for Hyprland/Omarchy, designed to avoid
 
 This project exists because `gpu-screen-recorder` can become unusable on AMD Polaris cards such as the RX 500 series. In those systems, the hardware encoder can trigger kernel ring buffer timeouts (`ring vce0 timeout`), causing GPU resets and desktop freezes.
 
-To avoid that, `omarchy-screenrecorder` records video with CPU-based H.264 using `wf-recorder` and `libx264`, so the GPU encoder is never used. Audio is captured separately and muxed into a single MKV file with multiple named tracks.
+To avoid that, `omarchy-capture-wf` records video with CPU-based H.264 using `wf-recorder` and `libx264`, so the GPU encoder is never used. Audio is captured separately and muxed into a single MKV file with multiple named tracks.
 
 ### Why this project is useful
 
@@ -49,8 +49,8 @@ To avoid that, `omarchy-screenrecorder` records video with CPU-based H.264 using
 ### Installation
 
 ```bash
-git clone https://github.com/TEEBAANDEV/omarchy-screenrecorder.git
-cd omarchy-screenrecorder
+git clone https://github.com/TEEBAANDEV/omarchy-capture-wf.git
+cd omarchy-capture-wf
 chmod +x install.sh
 ./install.sh
 ```
@@ -58,7 +58,7 @@ chmod +x install.sh
 If you are installing your own GitHub fork, replace `TEEBAANDEV` with your GitHub username, for example:
 
 ```bash
-git clone https://github.com/<your-user>/omarchy-screenrecorder.git
+git clone https://github.com/<your-user>/omarchy-capture-wf.git
 ```
 
 The installer is idempotent and safe to re-run. It creates the following components:
@@ -183,7 +183,7 @@ MIT
 
 Este proyecto es una adaptación personalizada para resolver un problema real: `gpu-screen-recorder` puede resultar inutilizable en tarjetas AMD Polaris, como la serie RX 500. En esos equipos, el encoder de hardware puede disparar timeouts del buffer del kernel (`ring vce0 timeout`), provocando reinicios de la GPU y congelaciones del sistema.
 
-Para evitarlo, `omarchy-screenrecorder` graba video con H.264 basado en CPU usando `wf-recorder` y `libx264`, de modo que el encoder de la GPU nunca se utiliza. El audio se captura por separado y se mezcla en un único archivo MKV con varias pistas nombradas.
+Para evitarlo, `omarchy-capture-wf` graba video con H.264 basado en CPU usando `wf-recorder` y `libx264`, de modo que el encoder de la GPU nunca se utiliza. El audio se captura por separado y se mezcla en un único archivo MKV con varias pistas nombradas.
 
 ### Por qué este proyecto es útil
 
@@ -220,8 +220,8 @@ Para evitarlo, `omarchy-screenrecorder` graba video con H.264 basado en CPU usan
 Si tu repositorio está publicado en GitHub bajo tu usuario, clónalo así:
 
 ```bash
-git clone https://github.com/TEEBAANDEV/omarchy-screenrecorder.git
-cd omarchy-screenrecorder
+git clone https://github.com/TEEBAANDEV/omarchy-capture-wf.git
+cd omarchy-capture-wf
 chmod +x install.sh
 ./install.sh
 ```
@@ -229,7 +229,7 @@ chmod +x install.sh
 Si usas un fork o un repositorio con otro nombre de usuario, solo cambia la parte del propietario en la URL:
 
 ```bash
-git clone https://github.com/<tu-usuario>/omarchy-screenrecorder.git
+git clone https://github.com/<tu-usuario>/omarchy-capture-wf.git
 ```
 
 El instalador es idempotente y se puede ejecutar varias veces sin problemas. Crea los siguientes componentes:
