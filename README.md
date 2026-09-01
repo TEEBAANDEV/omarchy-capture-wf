@@ -61,7 +61,7 @@ If you are installing your own GitHub fork, replace `TEEBAANDEV` with your GitHu
 git clone https://github.com/<your-user>/omarchy-capture-wf.git
 ```
 
-The installer is idempotent and safe to re-run. It creates the following components:
+The installer is idempotent and safe to re-run. It creates the following components, asks the running shell to add the indicator widget to the bar (`omarchy bar put <user>.indicators`), and appends the keybindings below to `~/.config/hypr/bindings.lua` **only if** they are not already present:
 
 | Component | Destination |
 | --- | --- |
@@ -75,12 +75,14 @@ The installer is idempotent and safe to re-run. It creates the following compone
 
 ### Keybindings
 
-Add the following to `~/.config/hypr/bindings.lua` using absolute paths so they work before the updated PATH is active:
+These are added by the installer when absent, so **no manual step is needed**. They use absolute paths so they work before the updated PATH is active:
 
 ```lua
 o.bind("SUPER + SHIFT + R", "Screen recording toggle", "~/.local/bin/record-screen")
 o.bind("SUPER + SHIFT + ALT + R", "Screen recording region", "~/.local/bin/record-screen --region")
 ```
+
+The default Omarchy `ALT + PRINT` binding also routes through the proxy automatically after the next login.
 
 Then reload the config:
 
@@ -139,11 +141,13 @@ Audio and video are captured separately. The desktop and mic inputs are captured
 
 **The recording icon does not appear in the bar.**
 
+If it was missing when the installer ran (shell not ready), add it manually:
+
 ```bash
-omarchy-shell shell rescanPlugins
+omarchy bar put <user>.indicators --section center --before omarchy.clock
 ```
 
-Then add the `<user>.indicators` widget to the bar layout. It hot-reloads on save.
+Then rescan plugins: `omarchy-shell shell rescanPlugins`. The widget hot-reloads on save.
 
 **The menu still shows `gpu-screen-recorder` entries.**
 
@@ -232,7 +236,7 @@ Si usas un fork o un repositorio con otro nombre de usuario, solo cambia la part
 git clone https://github.com/<tu-usuario>/omarchy-capture-wf.git
 ```
 
-El instalador es idempotente y se puede ejecutar varias veces sin problemas. Crea los siguientes componentes:
+El instalador es idempotente y se puede ejecutar varias veces sin problemas. Crea los siguientes componentes, pide al shell activo que añada el widget del indicador a la barra (`omarchy bar put <usuario>.indicators`) y añade los atajos de abajo a `~/.config/hypr/bindings.lua` **solo si** no están ya presentes:
 
 > Nota: el usuario de GitHub en la URL del clon no es lo mismo que el usuario del sistema Linux que usa el instalador. El nombre del plugin se genera a partir del usuario local, así que normalmente queda en `~/.config/omarchy/plugins/<usuario-linux>.indicators/`.
 
@@ -248,12 +252,14 @@ El instalador es idempotente y se puede ejecutar varias veces sin problemas. Cre
 
 ### Atajos de teclado
 
-Añade lo siguiente a `~/.config/hypr/bindings.lua` usando rutas absolutas para que funcione antes de que el nuevo `PATH` esté activo:
+El instalador los añade si no existen, así que **no hace falta ningún paso manual**. Usan rutas absolutas para que funcionen antes de que el nuevo `PATH` esté activo:
 
 ```lua
 o.bind("SUPER + SHIFT + R", "Screen recording toggle", "~/.local/bin/record-screen")
 o.bind("SUPER + SHIFT + ALT + R", "Screen recording region", "~/.local/bin/record-screen --region")
 ```
+
+El atajo predeterminado de Omarchy `ALT + PRINT` también pasa por el proxy automáticamente tras el próximo inicio de sesión.
 
 Luego recarga la configuración:
 
@@ -312,11 +318,13 @@ El audio y el video se capturan por separado. El escritorio y el micrófono se g
 
 **El icono de grabación no aparece en la barra.**
 
+Si no estaba al ejecutar el instalador (shell no disponible), añádelo manualmente:
+
 ```bash
-omarchy-shell shell rescanPlugins
+omarchy bar put <usuario>.indicators --section center --before omarchy.clock
 ```
 
-Luego añade el widget `<usuario>.indicators` al layout de la barra. Se recarga automáticamente al guardar.
+Luego re-escanea los plugins: `omarchy-shell shell rescanPlugins`. El widget se recarga automáticamente al guardar.
 
 **El menú sigue mostrando entradas de `gpu-screen-recorder`.**
 
