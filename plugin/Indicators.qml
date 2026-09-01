@@ -6,9 +6,9 @@ import qs.Ui
 
 BarWidget {
   id: root
-  moduleName: "omarchy.indicators"
+  moduleName: "teebaan.indicators"
 
-  readonly property var defaultIndicatorEntries: [ "ScreenRecording" ]
+  readonly property var defaultIndicatorEntries: [ "Dictation", "ScreenRecording", "Reminder", "NightLight", "Dnd", "StayAwake" ]
   readonly property var indicatorEntries: indicatorEntriesFromSettings(settings)
   property var activeIndicatorIds: []
   property var indicatorActiveStates: ({})

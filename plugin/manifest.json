@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "__USER__.indicators",
+  "id": "teebaan.indicators",
   "name": "My Indicators",
   "version": "1.0.0",
   "author": "Omarchy",
-  "description": "Screen recording status indicator (wf-recorder)",
+  "description": "Custom Screen Recording with Medal Clips UI",
   "kinds": [
     "bar-widget"
   ],
@@ -27,9 +27,34 @@
         "emptyText": "No indicators",
         "options": [
           {
+            "value": "Dictation",
+            "label": "Dictation",
+            "description": "Voice typing status"
+          },
+          {
             "value": "ScreenRecording",
             "label": "Screen recording",
             "description": "wf-recorder status"
+          },
+          {
+            "value": "Reminder",
+            "label": "Reminder",
+            "description": "Queued reminder status"
+          },
+          {
+            "value": "NightLight",
+            "label": "Night light",
+            "description": "Blue-light filter"
+          },
+          {
+            "value": "Dnd",
+            "label": "Do not disturb",
+            "description": "Notification silencing"
+          },
+          {
+            "value": "StayAwake",
+            "label": "Stay awake",
+            "description": "Idle lock and screensaver override"
           }
         ]
       },

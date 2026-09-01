@@ -1,0 +1,87 @@
+#!/bin/bash
+# record-screen-clip: save the last N seconds of screen recording (Medal style).
+#
+# Triggered by hotkey (default SUPER+F10). Reads buffered video and multi-track audio
+# segments from record-screen-clip-daemon and merges them into a single video clip
+# instantly using ffmpeg stream copy (-c copy).
+
+set -e
+
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-screenrecorder/config.sh"
+if [[ -f $CONFIG_FILE ]]; then
+  source "$CONFIG_FILE"
+fi
+
+CLIP_DURATION="${CLIP_DURATION:-30}"
+CLIP_DIR="${CLIP_DIR:-$HOME/Videos/Clips}"
+
+RUNTIME="${XDG_RUNTIME_DIR:-/tmp}"
+BUFFER_DIR="$RUNTIME/omarchy-clip-buffer"
+PID_FILE="$RUNTIME/record-screen-clip-daemon.pid"
+
+# Check if daemon is running
+if [[ ! -f $PID_FILE ]] || ! kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+  # Auto-start daemon
+  nohup record-screen-clip-daemon start >/dev/null 2>&1 &
+  disown
+  omarchy-notification-send -t 4000 "Replay Buffer iniciado" "El buffer ahora está guardando los últimos ${CLIP_DURATION}s. Vuelve a presionar el atajo para guardar un clip." 2>/dev/null || true
+  exit 0
+fi
+
+# Ensure destination directory exists
+mkdir -p "$CLIP_DIR"
+
+# Collect completed non-empty segment files (sorted chronologically)
+mapfile -t VID_SEGS < <(find "$BUFFER_DIR" -name "vid_[0-9]*.mkv" -type f -size +1k 2>/dev/null | sort -V | tail -n $(( (CLIP_DURATION / 5) + 2 )))
+mapfile -t AUD_SEGS < <(find "$BUFFER_DIR" -name "aud_[0-9]*.mkv" -type f -size +1k 2>/dev/null | sort -V | tail -n $(( (CLIP_DURATION / 5) + 2 )))
+
+if [[ ${#VID_SEGS[@]} -eq 0 ]]; then
+  omarchy-notification-send -u critical -t 3000 "Clip fallido" "No hay suficiente buffer grabado aún." 2>/dev/null || true
+  exit 1
+fi
+
+TIMESTAMP=$(date +'%Y-%m-%d_%H-%M-%S')
+OUTPUT_FILE="$CLIP_DIR/Clip_$TIMESTAMP.mkv"
+VID_LIST="$RUNTIME/clip_vid_list.txt"
+AUD_LIST="$RUNTIME/clip_aud_list.txt"
+VID_TMP="$RUNTIME/clip_vid_tmp.mkv"
+AUD_TMP="$RUNTIME/clip_aud_tmp.mkv"
+
+rm -f "$VID_LIST" "$AUD_LIST" "$VID_TMP" "$AUD_TMP"
+
+# Build video concat list
+for seg in "${VID_SEGS[@]}"; do
+  echo "file '$seg'" >> "$VID_LIST"
+done
+
+# Build audio concat list
+if [[ ${#AUD_SEGS[@]} -gt 0 ]]; then
+  for seg in "${AUD_SEGS[@]}"; do
+    echo "file '$seg'" >> "$AUD_LIST"
+  done
+fi
+
+# Concat video
+ffmpeg -y -f concat -safe 0 -i "$VID_LIST" -c copy "$VID_TMP" >/dev/null 2>&1
+
+# Concat audio if available (preserving all 3 multi-track audio streams: Mix, Desktop, Microphone)
+if [[ -f $AUD_LIST ]]; then
+  ffmpeg -y -f concat -safe 0 -i "$AUD_LIST" -map 0:0 -map 0:1 -map 0:2 -c copy "$AUD_TMP" >/dev/null 2>&1 || true
+fi
+
+# Mux video + multi-track audio into final MKV
+if [[ -f $AUD_TMP ]]; then
+  ffmpeg -y -i "$VID_TMP" -i "$AUD_TMP" -map 0:v:0 -map 1:0 -map 1:1 -map 1:2 -c copy "$OUTPUT_FILE" >/dev/null 2>&1
+else
+  mv "$VID_TMP" "$OUTPUT_FILE"
+fi
+
+rm -f "$VID_LIST" "$AUD_LIST" "$VID_TMP" "$AUD_TMP"
+
+# Send notification with file path
+if [[ -f $OUTPUT_FILE ]]; then
+  omarchy-notification-send -t 4000 "🎬 Clip guardado (Multipista)!" "${CLIP_DURATION}s guardados en:\n$OUTPUT_FILE" 2>/dev/null || true
+else
+  omarchy-notification-send -u critical -t 3000 "Clip fallido" "No se pudo generar el archivo de clip." 2>/dev/null || true
+  exit 1
+fi

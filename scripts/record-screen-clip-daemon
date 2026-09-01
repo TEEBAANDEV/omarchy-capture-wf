@@ -1,0 +1,149 @@
+#!/bin/bash
+# record-screen-clip-daemon: background replay buffer daemon (Medal style).
+#
+# Runs native wf-recorder video segmenter and ffmpeg multi-track audio segmenter in parallel.
+# Keeps last N seconds of video and audio segments in RAM buffer.
+
+set -e
+
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-screenrecorder/config.sh"
+if [[ -f $CONFIG_FILE ]]; then
+  source "$CONFIG_FILE"
+fi
+
+CLIP_DURATION="${CLIP_DURATION:-30}"
+REC_FPS="${REC_FPS:-60}"
+REC_CRF="${REC_CRF:-20}"
+REC_PRESET="${REC_PRESET:-veryfast}"
+
+RUNTIME="${XDG_RUNTIME_DIR:-/tmp}"
+BUFFER_DIR="$RUNTIME/omarchy-clip-buffer"
+PID_FILE="$RUNTIME/record-screen-clip-daemon.pid"
+
+REGION_MODE=0
+
+# Manage action
+case "${1:-start}" in
+  stop)
+    if [[ -f $PID_FILE ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+      kill -TERM "$(cat "$PID_FILE")" 2>/dev/null || true
+      rm -f "$PID_FILE"
+      rm -rf "$BUFFER_DIR"
+      echo "Clip daemon stopped"
+    fi
+    exit 0
+    ;;
+  status)
+    if [[ -f $PID_FILE ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+      echo "running"
+      exit 0
+    else
+      echo "stopped"
+      exit 1
+    fi
+    ;;
+  --region|start-region)
+    REGION_MODE=1
+    ;;
+  toggle)
+    if [[ -f $PID_FILE ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+      "$0" stop
+      omarchy-notification-send -t 3000 "Replay Buffer" "Desactivado" 2>/dev/null || true
+      exit 0
+    else
+      nohup "$0" start >/dev/null 2>&1 &
+      disown
+      omarchy-notification-send -t 3000 "Replay Buffer" "Activado (guardando últimos ${CLIP_DURATION}s)" 2>/dev/null || true
+      exit 0
+    fi
+    ;;
+esac
+
+# Start process
+if [[ -f $PID_FILE ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+  echo "Daemon already running (PID $(cat "$PID_FILE"))"
+  exit 0
+fi
+
+mkdir -p "$BUFFER_DIR"
+echo $$ > "$PID_FILE"
+
+cleanup() {
+  rm -f "$PID_FILE"
+  pkill -P $$ 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+# Detect target output or region
+WF_TARGET_ARG=()
+LOG_TARGET=""
+if [[ $REGION_MODE == 1 ]]; then
+  GEOS=$(hyprctl monitors -j | jq -r '.[] | "\(.x),\(.y) \(.width)x\(.height)"')
+  GEOS+=$'\n'
+  WS_LIST=$(hyprctl monitors -j | jq -r '.[] | .activeWorkspace.id' | paste -sd, -)
+  GEOS+=$(hyprctl clients -j | jq -r --arg ws "$WS_LIST" '[.[] | select(.mapped == true and .hidden != true and (.workspace.id as $w | $ws | split(",") | map(tonumber) | index($w) != null)) | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"] | unique[]')
+  hyprpicker -r -z >/dev/null 2>&1 &
+  FREEZE_PID=$!
+  sleep .1
+  if ! GEO=$(echo "$GEOS" | slurp -r 2>/dev/null); then
+    GEO=""
+  fi
+  kill "$FREEZE_PID" 2>/dev/null || true
+  if [[ -z $GEO ]]; then
+    echo "Region pick cancelled" >&2
+    rm -f "$PID_FILE"
+    exit 1
+  fi
+  WF_TARGET_ARG=(-g "$GEO")
+  LOG_TARGET="Zona ($GEO)"
+else
+  MON_NAME=$(hyprctl monitors -j 2>/dev/null | jq -r '.[] | select(.focused==true) | .name' | head -1)
+  if [[ -n $MON_NAME ]]; then
+    WF_TARGET_ARG=(-o "$MON_NAME")
+    LOG_TARGET="Pantalla ($MON_NAME)"
+  else
+    GEO=$(hyprctl monitors -j 2>/dev/null | jq -r '.[] | select(.focused==true) | "\(.x),\(.y) \(.width)x\(.height)"' | head -1)
+    [[ -z $GEO ]] && GEO="0,0 1600x900"
+    WF_TARGET_ARG=(-g "$GEO")
+    LOG_TARGET="Geometría ($GEO)"
+  fi
+fi
+
+# Detect audio sources
+DESK_SOURCE="${RECORD_DESK_SOURCE:-$(pactl get-default-sink 2>/dev/null).monitor}"
+MIC_SOURCE="${RECORD_MIC_SOURCE:-}"
+if [[ -z $MIC_SOURCE ]]; then
+  MIC_SOURCE="$(pactl get-default-source 2>/dev/null)"
+  if [[ $MIC_SOURCE == *.monitor ]]; then
+    MIC_SOURCE="$(pactl list short sources 2>/dev/null | awk '$2 !~ /\.monitor$/ {print $2; exit}')"
+  fi
+fi
+
+MIX_SOURCE_NAME="record_mix.monitor"
+if ! pactl list short sources 2>/dev/null | grep -q "record_mix.monitor"; then
+  MIX_SOURCE_NAME="$DESK_SOURCE"
+fi
+
+# 1. Start native wf-recorder video segmenter (no audio)
+wf-recorder "${WF_TARGET_ARG[@]}" -r "$REC_FPS" -c libx264 -p preset="$REC_PRESET" -p crf="$REC_CRF" \
+  -m segment -p segment_time=5 -f "$BUFFER_DIR/vid_%05d.mkv" >/dev/null 2>&1 &
+WFPID=$!
+
+# 2. Start ffmpeg multi-track audio segmenter (Track 1=Mix, Track 2=Desktop, Track 3=Microphone)
+ffmpeg -y -f pulse -i "$MIX_SOURCE_NAME" -f pulse -i "$DESK_SOURCE" -f pulse -i "$MIC_SOURCE" \
+  -map 0:a:0 -map 1:a:0 -map 2:a:0 \
+  -c:a aac -ac 2 \
+  -metadata:s:a:0 "title=Mix" -metadata:s:a:1 "title=Desktop" -metadata:s:a:2 "title=Microphone" \
+  -f segment -segment_time 5 -reset_timestamps 1 -segment_format matroska \
+  "$BUFFER_DIR/aud_%05d.mkv" >/dev/null 2>&1 &
+FFPID=$!
+
+omarchy-notification-send -t 3000 "Replay Buffer" "Activado en $LOG_TARGET (Multipista) - Últimos ${CLIP_DURATION}s" 2>/dev/null || true
+
+# Background cleaner: remove segments older than retention window
+while kill -0 "$WFPID" 2>/dev/null; do
+  sleep 5
+  MINUTES=$(( (CLIP_DURATION + 60) / 60 ))
+  [[ $MINUTES -lt 2 ]] && MINUTES=2
+  find "$BUFFER_DIR" -type f \( -name "vid_*.mkv" -o -name "aud_*.mkv" \) -mmin +"$MINUTES" -delete 2>/dev/null || true
+done

@@ -3,17 +3,20 @@
 #
 # Spawned by record-screen in its own session. Captures video with wf-recorder
 # and audio (multi-track) with ffmpeg, then muxes them into one MKV when the
-# video recording is interrupted. In "both" mode the MKV carries three audio
-# tracks: desktop, mic, and a unified mix of both. Never touches hardware
-# video encoding.
+# video recording is interrupted.
 
 set -e
 
-AUDIO_MODE=both
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-screenrecorder/config.sh"
+if [[ -f $CONFIG_FILE ]]; then
+  source "$CONFIG_FILE"
+fi
+
+AUDIO_MODE="${REC_AUDIO_MODE:-both}"
 REGION_MODE=0
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --audio) AUDIO_MODE=${2:-both}; shift ;;
+    --audio) AUDIO_MODE=${2:-$AUDIO_MODE}; shift ;;
     --region) REGION_MODE=${2:-0}; shift ;;
   esac
   shift
@@ -22,15 +25,12 @@ done
 OUTPUT_DIR="${XDG_VIDEOS_DIR:-$HOME/Videos}"
 RUNTIME="${XDG_RUNTIME_DIR:-/tmp}"
 
-# Audio endpoints. Auto-detected so no hardware-specific names live in the
-# repo, but you can pin them with RECORD_DESK_SOURCE / RECORD_MIC_SOURCE
-# (see `pactl list short sinks` / `pactl list short sources`).
+# Audio endpoints
 DESK_SOURCE="${RECORD_DESK_SOURCE:-$(pactl get-default-sink 2>/dev/null).monitor}"
 MIC_SOURCE="${RECORD_MIC_SOURCE:-}"
 if [[ -z $MIC_SOURCE ]]; then
   MIC_SOURCE="$(pactl get-default-source 2>/dev/null)"
   if [[ $MIC_SOURCE == *.monitor ]]; then
-    # Default source is an output monitor; pick the first real input instead.
     MIC_SOURCE="$(pactl list short sources 2>/dev/null | awk '$2 !~ /\.monitor$/ {print $2; exit}')"
   fi
 fi
@@ -40,10 +40,7 @@ FINAL="$OUTPUT_DIR/rec-$(date +'%Y-%m-%d_%H-%M-%S').mkv"
 VIDEO_TMP="$RUNTIME/record-screen-video.mkv"
 AUDIO_TMP="$RUNTIME/record-screen-audio.mkv"
 
-# Wipe any stale temp files from a crashed previous run.
 rm -f "$VIDEO_TMP" "$AUDIO_TMP"
-
-# Record own pid so record-screen can find us.
 echo $$ > "$RUNTIME/record-screen-daemon.pid"
 
 cleanup() {
@@ -52,9 +49,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# ---------------------------------------------------------------------------
-# Geometry pick
-# ---------------------------------------------------------------------------
+# Detect target output or region
+WF_TARGET_ARG=()
+LOG_TARGET=""
 if [[ $REGION_MODE == 1 ]]; then
   GEOS=$(hyprctl monitors -j | jq -r '.[] | "\(.x),\(.y) \(.width)x\(.height)"')
   GEOS+=$'\n'
@@ -71,34 +68,39 @@ if [[ $REGION_MODE == 1 ]]; then
     echo "Region pick cancelled" >&2
     exit 1
   fi
+  WF_TARGET_ARG=(-g "$GEO")
+  LOG_TARGET="Zona ($GEO)"
 else
-  GEO=$(hyprctl monitors -j | jq -r '.[] | select(.focused==true) | "\(.x),\(.y) \(.width)x\(.height)"' | head -1)
-  [[ -z $GEO ]] && GEO="0,0 1600x900"
+  MON_NAME=$(hyprctl monitors -j 2>/dev/null | jq -r '.[] | select(.focused==true) | .name' | head -1)
+  if [[ -n $MON_NAME ]]; then
+    WF_TARGET_ARG=(-o "$MON_NAME")
+    LOG_TARGET="Pantalla ($MON_NAME)"
+  else
+    GEO=$(hyprctl monitors -j 2>/dev/null | jq -r '.[] | select(.focused==true) | "\(.x),\(.y) \(.width)x\(.height)"' | head -1)
+    [[ -z $GEO ]] && GEO="0,0 1600x900"
+    WF_TARGET_ARG=(-g "$GEO")
+    LOG_TARGET="Geometría ($GEO)"
+  fi
 fi
 
 AINFO="no audio"
 case $AUDIO_MODE in
-  desktop) AINFO="desktop audio" ;;
-  mic)     AINFO="microphone audio" ;;
-  both)    AINFO="3 audio tracks: desktop, mic, mix" ;;
+  desktop) AINFO="desktop audio (1 track)" ;;
+  mic)     AINFO="microphone audio (1 track)" ;;
+  both)    AINFO="3 audio tracks: Track 1=Mix, Track 2=Desktop, Track 3=Microphone" ;;
 esac
 
-# ---------------------------------------------------------------------------
-# Start capture processes
-# ---------------------------------------------------------------------------
-# Video: wf-recorder, no audio.
-wf-recorder -g "$GEO" -r 60 -c libx264 -p preset=veryfast -p crf=20 \
+REC_FPS="${REC_FPS:-60}"
+REC_CRF="${REC_CRF:-20}"
+REC_PRESET="${REC_PRESET:-veryfast}"
+
+wf-recorder "${WF_TARGET_ARG[@]}" -r "$REC_FPS" -c libx264 -p preset="$REC_PRESET" -p crf="$REC_CRF" \
   -f "$VIDEO_TMP" >"/dev/null" 2>&1 &
 WFPID=$!
 
-# Audio: ffmpeg multi-track per mode.
-#   desktop -> track 1: desktop only
-#   mic     -> track 1: mic only (mono -> stereo)
-#   both    -> tracks: desktop, mic, and a unified mix (amix) of both.
 FFPID=""
 if [[ $AUDIO_MODE != none ]]; then
   FF_ARGS=(-y)
-  MIX_FILTER=""
   case $AUDIO_MODE in
     desktop)
       FF_ARGS+=( -f pulse -i "$DESK_SOURCE" )
@@ -111,7 +113,7 @@ if [[ $AUDIO_MODE != none ]]; then
     both)
       FF_ARGS+=( -f pulse -i "$DESK_SOURCE" -f pulse -i "$MIC_SOURCE" )
       MIX_FILTER="[0:a]aformat=sample_rates=48000,pan=stereo|c0=c0|c1=c0,asplit=2[deskP][deskM];[1:a]aformat=sample_rates=48000,pan=stereo|c0=c0|c1=c0,asplit=2[micP][micM];[deskM][micM]amix=inputs=2:duration=longest:normalize=0[mix]"
-      MAP_ARGS=(-filter_complex "$MIX_FILTER" -map "[deskP]" -map "[micP]" -map "[mix]")
+      MAP_ARGS=(-filter_complex "$MIX_FILTER" -map "[mix]" -map "[deskP]" -map "[micP]")
       ;;
   esac
   ffmpeg "${FF_ARGS[@]}" "${MAP_ARGS[@]}" \
@@ -119,9 +121,7 @@ if [[ $AUDIO_MODE != none ]]; then
   FFPID=$!
 fi
 
-# Notify right away so the user gets instant feedback; the health check below
-# still catches a failed start and reports it afterwards.
-omarchy-notification-send -t 3000 "Recording started" "$GEO @ 60fps ($AINFO)"
+omarchy-notification-send -t 3000 "Recording started" "$LOG_TARGET @ ${REC_FPS}fps ($AINFO)"
 
 sleep 3
 if ! kill -0 "$WFPID" 2>/dev/null; then
@@ -131,17 +131,12 @@ if ! kill -0 "$WFPID" 2>/dev/null; then
   exit 1
 fi
 
-# ---------------------------------------------------------------------------
-# Wait for the toggle to interrupt video recording, then finalize.
-# ---------------------------------------------------------------------------
 while kill -0 "$WFPID" 2>/dev/null; do
   sleep 1
 done
 
-# wf-recorder ended (SIGINT from record-screen). Stop audio capture cleanly.
 if [[ -n $FFPID ]] && kill -0 "$FFPID" 2>/dev/null; then
   kill -INT "$FFPID" 2>/dev/null || true
-  # Give ffmpeg a moment to finalize its container.
   for _ in $(seq 1 20); do
     kill -0 "$FFPID" 2>/dev/null || break
     sleep 0.2
@@ -150,18 +145,13 @@ if [[ -n $FFPID ]] && kill -0 "$FFPID" 2>/dev/null; then
 fi
 sleep 0.5
 
-# ---------------------------------------------------------------------------
-# Mux video + audio track(s) into the final MKV.
-# ---------------------------------------------------------------------------
 if [[ $AUDIO_MODE == none ]]; then
   mv "$VIDEO_TMP" "$FINAL"
 else
-  # Give each audio track a clear title (indexed per mode) so editors and
-  # players show which one is which.
   case $AUDIO_MODE in
     desktop) TRACK_TITLES=(-metadata:s:a:0 "title=Desktop") ;;
     mic)     TRACK_TITLES=(-metadata:s:a:0 "title=Microphone") ;;
-    both)    TRACK_TITLES=(-metadata:s:a:0 "title=Desktop" -metadata:s:a:1 "title=Microphone" -metadata:s:a:2 "title=Mix") ;;
+    both)    TRACK_TITLES=(-metadata:s:a:0 "title=Mix" -metadata:s:a:1 "title=Desktop" -metadata:s:a:2 "title=Microphone") ;;
   esac
   ffmpeg -y -i "$VIDEO_TMP" -i "$AUDIO_TMP" \
     -map 0:v:0 -map 1:a -c copy "${TRACK_TITLES[@]}" "$FINAL" \

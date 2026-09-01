@@ -1,378 +1,71 @@
-# omarchy-capture-wf
+# omarchy-capture-wf (v1.1)
 
-[English](#english) · [Español](#espa%C3%B1ol)
+Screen recording and Medal-style instant replay buffer clipping for [Omarchy](https://github.com/omarchy/omarchy) on Wayland / Hyprland.
 
-A custom adaptation of a screen recorder for Hyprland/Omarchy, designed to avoid AMD VCE GPU crashes on affected cards while keeping the workflow simple and native to the desktop environment.
-
-> Built for Omarchy (Hyprland + Quickshell) and optimized for hardware setups where `gpu-screen-recorder` fails because of VCE encoder instability.
-
-## Quick start
-
-```bash
-git clone https://github.com/TEEBAANDEV/omarchy-capture-wf.git
-cd omarchy-capture-wf
-chmod +x install.sh
-./install.sh
-```
-
-Then use:
-
-```bash
-record-screen
-record-screen --region
-record-screen --audio mic
-```
-
-> Note: the plugin name in this project is generated from your local Linux username. All commands below use `$(id -un)` so they work as-is when you paste them into a shell. For example, that makes the plugin path `~/.config/omarchy/plugins/<your-name>.indicators/`.
+Replaces `gpu-screen-recorder` with a CPU-based `wf-recorder` + `ffmpeg` multi-track pipeline, avoiding driver crashes on AMD RX 580 GPUs while offering instant buffer clipping, custom region selection, and multi-track audio.
 
 ---
 
-## English
+## ✨ Features (v1.1)
 
-### Overview
-
-This project exists because `gpu-screen-recorder` can become unusable on AMD Polaris cards such as the RX 500 series. In those systems, the hardware encoder can trigger kernel ring buffer timeouts (`ring vce0 timeout`), causing GPU resets and desktop freezes.
-
-To avoid that, `omarchy-capture-wf` records video with CPU-based H.264 using `wf-recorder` and `libx264`, so the GPU encoder is never used. Audio is captured separately and muxed into a single MKV file with multiple named tracks.
-
-### Why this project is useful
-
-- Avoids unstable AMD VCE encoder usage.
-- Works well in Omarchy/Hyprland workflows.
-- Includes a bar indicator and Capture menu integration.
-- Supports region capture across monitors.
-- Produces multi-track audio output for editing and post-production.
-
-### Features
-
-- Toggle recording with a single command: `record-screen`
-- Region capture with `--region` using `hyprpicker`
-- Multi-monitor support for region selection
-- Audio capture from desktop and microphone as separate named tracks
-- Optional unified `Mix` track
-- Omarchy bar widget indicator for active recording state
-- Menu entries under Capture → Screenrecord
-- Recording output stored as MKV for clean multi-track handling
-
-### Requirements
-
-- `wf-recorder`
-- `ffmpeg`
-- `slurp`
-- `hyprpicker`
-- `jq`
-- `sed`
-- Hyprland + Omarchy shell/Quickshell
-- `omarchy-notification-send`
-
-### Installation
-
-```bash
-git clone https://github.com/TEEBAANDEV/omarchy-capture-wf.git
-cd omarchy-capture-wf
-chmod +x install.sh
-./install.sh
-```
-
-If you are installing your own GitHub fork, replace `TEEBAANDEV` with your GitHub username, for example:
-
-```bash
-git clone https://github.com/<your-user>/omarchy-capture-wf.git
-```
-
-The installer is idempotent and safe to re-run. It creates the following components, asks the running shell to add the indicator widget to the bar using your local Linux username (that is, `omarchy bar put $(id -un).indicators`), and appends the keybindings below to `~/.config/hypr/bindings.lua` **only if** they are not already present:
-
-| Component | Destination |
-| --- | --- |
-| `record-screen` / `record-screen-daemon` | `~/.local/bin` |
-| Bar indicator plugin | `~/.config/omarchy/plugins/$(id -un).indicators/` |
-| Menu override (Start/Stop) | `~/.config/omarchy/extensions/` |
-| Proxy `omarchy-capture-screenrecording` | `~/.config/omarchy/bin/` |
-| PATH override | `~/.config/environment.d/` |
-
-> Note: use your local Linux username in `~/.config/omarchy/plugins/$(id -un).indicators/`, not your GitHub username. Let `$(id -un)` do the substitution for you.
->
-> The `environment.d` PATH override takes effect on the next login because the active Quickshell session does not reload `PATH` changes mid-session. If the bar indicator does not detect the proxy, log out and log back in.
-
-### Keybindings
-
-These are added by the installer when absent, so **no manual step is needed**. They use absolute paths so they work before the updated PATH is active. To see the exact lines that were written, resolve them in a shell:
-
-```bash
-grep "record-screen" ~/.config/hypr/bindings.lua
-```
-
-The default Omarchy `ALT + PRINT` binding also routes through the proxy automatically after the next login.
-
-Then reload the config:
-
-```bash
-hyprctl reload
-hyprctl configerrors
-```
-
-### Usage
-
-```bash
-record-screen                 # toggle recording of the focused monitor
-record-screen --region        # choose a region, monitor, or window and record
-record-screen --audio mic     # record only the microphone track (default: both)
-```
-
-| Flag | Value | Output tracks |
-| --- | --- | --- |
-| `--audio both` (default) | desktop + mic | `Desktop`, `Microphone`, `Mix` |
-| `--audio desktop` | desktop only | `Desktop` |
-| `--audio mic` | mic only | `Microphone` |
-| `--audio none` | video only | — |
-
-Files are saved as `rec-YYYY-MM-DD_HH-MM-SS.mkv` in `$XDG_VIDEOS_DIR` (typically `~/Videos`). MKV is used because it cleanly supports multiple audio tracks while keeping them named and easy to edit in tools such as VLC, mpv, and video editors.
-
-A notification appears immediately when recording starts; if startup fails, a critical notification is sent a few seconds later.
-
-### Configuration
-
-Audio devices are auto-detected from the active PipeWire session:
-
-- Desktop audio uses the default sink monitor output.
-- Microphone uses the default source, while ignoring monitor-type outputs automatically.
-
-You can force specific endpoints with environment variables:
-
-```bash
-export RECORD_DESK_SOURCE="alsa_output.pci-0000_00_1f.3.analog-stereo.monitor"
-export RECORD_MIC_SOURCE="alsa_input.usb-Your_Mic-00.mono-fallback"
-```
-
-To find the relevant names:
-
-```bash
-pactl list short sinks
-pactl list short sources
-```
-
-Look for the `.monitor` entry from your default output and the source name of your microphone.
-
-### How audio is handled
-
-Audio and video are captured separately. The desktop and mic inputs are captured directly with `ffmpeg`, while the video stream is recorded with `wf-recorder`. On stop, the streams are muxed into a single MKV. For `--audio both`, the `Mix` track is composed dynamically using an `asplit`/`amix` filter chain.
-
-### Troubleshooting
-
-**The recording icon does not appear in the bar.**
-
-If it was missing when the installer ran (shell not ready), add it manually. This resolves the plugin path automatically:
-
-```bash
-omarchy bar put "$(id -un).indicators" --section center --before omarchy.clock
-```
-
-Then rescan plugins: `omarchy-shell shell rescanPlugins`. The widget hot-reloads on save.
-
-**The menu still shows `gpu-screen-recorder` entries.**
-
-The proxy only takes precedence when `~/.config/omarchy/bin` is ahead of `/usr/share/omarchy/bin` in your `PATH`. Log out and log back in so the environment override is applied.
-
-**Nothing is recorded or the output is zero bytes.**
-
-Check the daemon logs:
-
-```bash
-$XDG_RUNTIME_DIR/record-screen-daemon.log
-```
-
-The script redirects `wf-recorder` and `ffmpeg` stderr there, which is the best place to diagnose startup problems.
-
-### Uninstall
-
-```bash
-rm -f ~/.local/bin/record-screen ~/.local/bin/record-screen-daemon
-rm -rf ~/.config/omarchy/plugins/"$(id -un).indicators"
-rm -f ~/.config/omarchy/extensions/omarchy-menu.jsonc
-rm -f ~/.config/omarchy/bin/omarchy-capture-screenrecording
-rm -f ~/.config/environment.d/record-screen-path.conf
-```
-
-Also remove the two custom keybindings and restart the session so the `PATH` override is cleared.
-
-Also remove the two custom keybindings and restart the session so the `PATH` override is cleared.
-
-### License
-
-MIT
+- 🎬 **Medal-Style Instant Replay Buffer**: Continuously buffers video/audio in RAM. Press `SUPER + F10` to save the last N seconds (15s to 120s) instantly to `~/Videos/Clips/`.
+- ✂️ **Screen & Region Buffer Modes**: Start the Replay Buffer for the full focused monitor or pick a custom screen region/window with `slurp`.
+- 🎛️ **Multi-Track Audio**:
+  - **Both (`both`)**: Produces 3 separate audio tracks (`Track 1=Mix`, `Track 2=Desktop`, `Track 3=Microphone`) for flexible post-editing.
+  - **Desktop (`desktop`)**: 1 single audio track for desktop/system audio.
+  - **Microphone (`mic`)**: 1 single audio track for mic input.
+  - **None (`none`)**: Video only.
+- 🎚️ **Interactive Bar Widget**: QML indicator panel with dark Omarchy UI (`qs.Ui`), live buffer controls, FPS selector (30/60), duration chips, and direct manual recording buttons.
+- 🔒 **Settings Protection**: Settings options are automatically locked during active recording or buffer runs to prevent configuration desync.
+- 🚀 **Zero Re-encoding**: Clips are concatenated instantly via FFmpeg stream copy (`-c copy`).
 
 ---
 
-## Español
+## 🎹 Default Hotkeys
 
-### Visión general
+| Shortcut | Action |
+| --- | --- |
+| `SUPER + F10` | 🎬 Save Instant Replay Clip (last N seconds) |
+| `SUPER + SHIFT + F10` | 🔄 Toggle Replay Buffer Daemon |
+| `SUPER + SHIFT + R` | 🔴 Toggle Full-Screen Manual Recording |
+| `SUPER + SHIFT + ALT + R` | ✂️ Toggle Region Manual Recording |
 
-Este proyecto es una adaptación personalizada para resolver un problema real: `gpu-screen-recorder` puede resultar inutilizable en tarjetas AMD Polaris, como la serie RX 500. En esos equipos, el encoder de hardware puede disparar timeouts del buffer del kernel (`ring vce0 timeout`), provocando reinicios de la GPU y congelaciones del sistema.
+---
 
-Para evitarlo, `omarchy-capture-wf` graba video con H.264 basado en CPU usando `wf-recorder` y `libx264`, de modo que el encoder de la GPU nunca se utiliza. El audio se captura por separado y se mezcla en un único archivo MKV con varias pistas nombradas.
+## 📦 Installation
 
-### Por qué este proyecto es útil
-
-- Evita el uso del encoder AMD VCE inestable.
-- Encaja bien con flujos de trabajo de Omarchy/Hyprland.
-- Incluye un indicador en la barra y una integración con el menú de captura.
-- Soporta grabación por región en varios monitores.
-- Genera audio multipista para edición y postproducción.
-
-### Características
-
-- Grabación con un solo comando: `record-screen`
-- Captura por región con `--region` usando `hyprpicker`
-- Soporte para varios monitores al seleccionar la región
-- Captura de audio del escritorio y del micrófono como pistas separadas
-- Pista opcional de mezcla `Mix`
-- Indicador de estado de grabación en la barra de Omarchy
-- Entradas en el menú Captura → Screenrecord
-- Salida en MKV para manejar varias pistas de forma limpia
-
-### Requisitos
-
-- `wf-recorder`
-- `ffmpeg`
-- `slurp`
-- `hyprpicker`
-- `jq`
-- `sed`
-- Hyprland + shell Omarchy/Quickshell
-- `omarchy-notification-send`
-
-### Instalación
-
-Si tu repositorio está publicado en GitHub bajo tu usuario, clónalo así:
+Clone and run `install.sh`:
 
 ```bash
-git clone https://github.com/TEEBAANDEV/omarchy-capture-wf.git
+git clone https://github.com/teebaan/omarchy-capture-wf.git
 cd omarchy-capture-wf
-chmod +x install.sh
 ./install.sh
 ```
 
-Si usas un fork o un repositorio con otro nombre de usuario, solo cambia la parte del propietario en la URL:
+Restart the shell to apply changes:
 
 ```bash
-git clone https://github.com/<tu-usuario>/omarchy-capture-wf.git
+omarchy restart shell
 ```
 
-El instalador es idempotente y se puede ejecutar varias veces sin problemas. Crea los siguientes componentes, pide al shell activo que añada el widget del indicador a la barra usando tu usuario local de Linux (es decir, `omarchy bar put $(id -un).indicators`) y añade los atajos de abajo a `~/.config/hypr/bindings.lua` **solo si** no están ya presentes:
+---
 
-> Nota: el usuario de GitHub en la URL del clon no es el usuario del sistema Linux que usa el instalador. El nombre del plugin se genera a partir del usuario local, así que normalmente queda en `~/.config/omarchy/plugins/$(id -un).indicators/`. Deja que `$(id -un)` haga la sustitución por ti.
+## ⚙️ Configuration
 
-| Componente | Destino |
-| --- | --- |
-| `record-screen` / `record-screen-daemon` | `~/.local/bin` |
-| Plugin del indicador de barra | `~/.config/omarchy/plugins/$(id -un).indicators/` |
-| Override del menú (Iniciar/Detener) | `~/.config/omarchy/extensions/` |
-| Proxy `omarchy-capture-screenrecording` | `~/.config/omarchy/bin/` |
-| Override de PATH | `~/.config/environment.d/` |
-
-> Nota: el override de `environment.d` se aplica en el próximo inicio de sesión porque el Quickshell activo no recarga cambios de `PATH` en mitad de sesión. Si el indicador no detecta el proxy, cierra sesión y vuelve a entrar.
-
-### Atajos de teclado
-
-El instalador los añade si no existen, así que **no hace falta ningún paso manual**. Usan rutas absolutas para que funcionen antes de que el nuevo `PATH` esté activo. Para ver las líneas exactas que se escribieron, resuélvelas en un shell:
+Configuration is saved in `~/.config/omarchy-screenrecorder/config.sh` and can be adjusted dynamically via the bar widget or edited manually:
 
 ```bash
-grep "record-screen" ~/.config/hypr/bindings.lua
+CLIP_DURATION=30
+CLIP_DIR="$HOME/Videos/Clips"
+REC_FPS=60
+REC_CRF=20
+REC_PRESET="veryfast"
+REC_AUDIO_MODE="both"
+CLIP_HOTKEY="SUPER + F10"
 ```
 
-El atajo predeterminado de Omarchy `ALT + PRINT` también pasa por el proxy automáticamente tras el próximo inicio de sesión.
+---
 
-Luego recarga la configuración:
+## 📄 License
 
-```bash
-hyprctl reload
-hyprctl configerrors
-```
-
-### Uso
-
-```bash
-record-screen                 # activa o pausa la grabación del monitor activo
-record-screen --region        # elige una región, un monitor o una ventana y graba
-record-screen --audio mic     # solo graba el micrófono (por defecto: both)
-```
-
-| Opción | Valor | Pistas generadas |
-| --- | --- | --- |
-| `--audio both` (predeterminado) | escritorio + micrófono | `Desktop`, `Microphone`, `Mix` |
-| `--audio desktop` | solo escritorio | `Desktop` |
-| `--audio mic` | solo micrófono | `Microphone` |
-| `--audio none` | solo video | — |
-
-Los archivos se guardan como `rec-YYYY-MM-DD_HH-MM-SS.mkv` en `$XDG_VIDEOS_DIR` (normalmente `~/Videos`). Se usa MKV porque admite varias pistas de audio de forma limpia y mantiene los nombres de las pistas para editarlas fácilmente en VLC, mpv y otros programas.
-
-Cuando empieza la grabación aparece una notificación inmediata; si el arranque falla, se envía una notificación crítica unos segundos después.
-
-### Configuración
-
-Los dispositivos de audio se detectan automáticamente desde la sesión de PipeWire activa:
-
-- El audio del escritorio usa el monitor del sink predeterminado.
-- El micrófono usa la fuente predeterminada, ignorando automáticamente salidas tipo monitor.
-
-Puedes forzar endpoints concretos con variables de entorno:
-
-```bash
-export RECORD_DESK_SOURCE="alsa_output.pci-0000_00_1f.3.analog-stereo.monitor"
-export RECORD_MIC_SOURCE="alsa_input.usb-Tu_Micro-00.mono-fallback"
-```
-
-Para ver los nombres disponibles:
-
-```bash
-pactl list short sinks
-pactl list short sources
-```
-
-Busca la entrada `.monitor` de tu salida predeterminada y el nombre del micrófono que quieras usar.
-
-### Cómo funciona el audio
-
-El audio y el video se capturan por separado. El escritorio y el micrófono se graban directamente con `ffmpeg`, mientras que la imagen se registra con `wf-recorder`. Al detenerse, todo se muxa en un único MKV. En el modo `--audio both`, la pista `Mix` se compone dinámicamente con un filtro `asplit`/`amix`.
-
-### Solución de problemas
-
-**El icono de grabación no aparece en la barra.**
-
-Si no estaba al ejecutar el instalador (shell no disponible), añádelo manualmente. Este comando resuelve la ruta del plugin automáticamente:
-
-```bash
-omarchy bar put "$(id -un).indicators" --section center --before omarchy.clock
-```
-
-Luego re-escanea los plugins: `omarchy-shell shell rescanPlugins`. El widget se recarga automáticamente al guardar.
-
-**El menú sigue mostrando entradas de `gpu-screen-recorder`.**
-
-El proxy solo tiene prioridad cuando `~/.config/omarchy/bin` está antes que `/usr/share/omarchy/bin` en tu `PATH`. Cierra sesión y vuelve a entrar para aplicar la override del entorno.
-
-**No se graba nada o el archivo queda vacío.**
-
-Revisa el registro del daemon:
-
-```bash
-$XDG_RUNTIME_DIR/record-screen-daemon.log
-```
-
-El script redirige el stderr de `wf-recorder` y `ffmpeg` allí, y suele ser el mejor punto para diagnosticar errores de inicio.
-
-### Desinstalación
-
-```bash
-rm -f ~/.local/bin/record-screen ~/.local/bin/record-screen-daemon
-rm -rf ~/.config/omarchy/plugins/"$(id -un).indicators"
-rm -f ~/.config/omarchy/extensions/omarchy-menu.jsonc
-rm -f ~/.config/omarchy/bin/omarchy-capture-screenrecording
-rm -f ~/.config/environment.d/record-screen-path.conf
-```
-
-También elimina los dos atajos personalizados y reinicia la sesión para liberar el cambio de `PATH`.
-
-### Licencia
-
-MIT
+MIT License.

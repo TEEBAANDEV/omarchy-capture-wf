@@ -1,25 +1,24 @@
 #!/bin/bash
-# record-screen: toggle screen recording with MULTI-TRACK audio.
+# record-screen: toggle screen recording with configurable audio mode.
 #
-# Video is captured by wf-recorder (CPU x264, never touches the RX 580 VCE
-# encoder that makes gpu-screen-recorder crash). Audio is captured separately
-# by ffmpeg, one track per source (desktop / mic), and the tracks are muxed
-# with the video into a single MKV on stop. This replaces the fragile
-# PipeWire loopback mixing that only captured the mic at times.
-#
-# Usage:
-#   record-screen [--region] [--audio none|desktop|mic|both]
-#
-# As a toggle: start recording, or stop the running one.
+# Video is captured by wf-recorder (CPU x264). Audio mode (both, desktop, mic,
+# none) is read from ~/.config/omarchy-screenrecorder/config.sh unless
+# overridden via --audio.
 
 set -e
 
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-screenrecorder/config.sh"
+if [[ -f $CONFIG_FILE ]]; then
+  source "$CONFIG_FILE"
+fi
+
 REGION_MODE=0
-AUDIO_MODE=both
+AUDIO_MODE="${REC_AUDIO_MODE:-both}"
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --region) REGION_MODE=1 ;;
-    --audio) AUDIO_MODE=${2:-both}; shift ;;
+    --audio) AUDIO_MODE=${2:-$AUDIO_MODE}; shift ;;
     --daemon) exec "$HOME/.local/bin/record-screen-daemon" --audio "$AUDIO_MODE" --region "$REGION_MODE" ;;
   esac
   shift
@@ -32,7 +31,6 @@ DAEMON_PID="$RUNTIME/record-screen-daemon.pid"
 # Stop path: signal the daemon if it is running.
 if [[ -f $DAEMON_PID ]] && kill -0 "$(cat "$DAEMON_PID")" 2>/dev/null; then
   pkill -INT -x wf-recorder 2>/dev/null || true
-  omarchy-notification-send -t 5000 "Recording saved" "Look in $OUTPUT_DIR"
   exit 0
 fi
 
