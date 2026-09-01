@@ -60,6 +60,8 @@ In Version 1.1, it includes an instant **Replay Buffer / Clips mode** (similar t
 - Menu entries under Capture -> Screenrecord
 - Recording output stored as MKV for clean multi-track handling
 
+> Note / Warning (v1.1): In Replay Buffer / Clips mode with multi-track audio (`both`), Track 1 currently outputs desktop audio only, and Track 3 outputs microphone audio. This issue is being investigated and will be addressed in a future update.
+
 ### Requirements
 
 - `wf-recorder`
@@ -239,7 +241,7 @@ En la versión 1.1, incluye el **modo Clips / Replay Buffer instantáneo** (alma
 - Evita el uso del encoder AMD VCE inestable.
 - Encaja bien con flujos de trabajo de Omarchy/Hyprland.
 - Incluye un indicador en la barra interactivo con bloqueo de ajustes.
-- Soporta guardado de clips instantáneos y modos de buffer por región.
+- Soporta guardado de clips instantáneo y modos de buffer por región.
 - Soporta grabación por región en varios monitores.
 - Genera audio multipista para edición y postproducción.
 
@@ -255,6 +257,8 @@ En la versión 1.1, incluye el **modo Clips / Replay Buffer instantáneo** (alma
 - Indicador interactivo en la barra de Omarchy con tema oscuro (`qs.Ui`), selector de FPS (30/60), chips de duración y bloqueo de ajustes
 - Entradas en el menú Captura -> Screenrecord
 - Salida en MKV para manejar varias pistas de forma limpia
+
+> Nota / Advertencia (v1.1): En el modo Replay Buffer / Clips con audio multipista (`both`), la Pista 1 emite actualmente solo el audio del escritorio y la Pista 3 emite el micrófono. Este comportamiento se corregirá en una próxima actualización.
 
 ### Requisitos
 
