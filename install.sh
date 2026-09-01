@@ -80,7 +80,7 @@ fi
 if [[ -w $BINDINGS_FILE ]]; then
   add_binding_absent "$HOME/.local/bin/record-screen" "" "Screen recording toggle" "SUPER + SHIFT + R"
   add_binding_absent "$HOME/.local/bin/record-screen" "--region" "Screen recording region" "SUPER + SHIFT + ALT + R"
-  add_binding_absent "$HOME/.local/bin/record-screen-clip" "" "Save Instant Replay Clip (Medal)" "SUPER + F10"
+  add_binding_absent "$HOME/.local/bin/record-screen-clip" "" "Save Instant Replay Clip" "SUPER + F10"
   add_binding_absent "$HOME/.local/bin/record-screen-clip-daemon" "toggle" "Toggle Replay Buffer" "SUPER + SHIFT + F10"
 else
   echo "note: $BINDINGS_FILE not writable; add the bindings yourself (see README)"

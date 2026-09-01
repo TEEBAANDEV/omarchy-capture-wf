@@ -21,7 +21,7 @@ BarIndicator {
   activeText: recording ? "🔴 REC" : (bufferRunning ? "󰑋" : "󰻂")
   inactiveText: "󰻂"
   activeTooltipText: recording ? "🔴 GRABANDO PANTALLA... (clic para detener)" : (bufferRunning ? "Replay Buffer activo (" + clipDuration + "s - " + clipHotkey + ")" : "Replay Buffer desactivado")
-  inactiveTooltipText: "Grabación y Clips (Medal)"
+  inactiveTooltipText: "Grabación y Clips"
 
   function refreshState() {
     if (statusProc.running) return
