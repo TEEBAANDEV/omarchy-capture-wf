@@ -1,0 +1,5 @@
+#!/bin/bash
+# Proxy for omarchy-capture-screenrecording that redirects screen recording to
+# record-screen (wf-recorder, CPU x264). gpu-screen-recorder crashes the RX 580
+# VCE encoder, so any invocation must go through the wf-recorder toggle.
+exec "$HOME/.local/bin/record-screen"

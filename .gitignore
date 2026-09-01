@@ -1,0 +1,4 @@
+# Recordings and temp artifacts produced while testing
+*.mkv
+*.mp4
+/tmp/

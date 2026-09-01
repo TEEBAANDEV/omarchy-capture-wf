@@ -1,0 +1,165 @@
+#!/bin/bash
+# record-screen-daemon: performs the actual recording.
+#
+# Spawned by record-screen in its own session. Captures video with wf-recorder
+# and audio (multi-track) with ffmpeg, then muxes them into one MKV when the
+# video recording is interrupted. In "both" mode the MKV carries three audio
+# tracks: desktop, mic, and a unified mix of both. Never touches hardware
+# video encoding.
+
+set -e
+
+AUDIO_MODE=both
+REGION_MODE=0
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --audio) AUDIO_MODE=${2:-both}; shift ;;
+    --region) REGION_MODE=${2:-0}; shift ;;
+  esac
+  shift
+done
+
+OUTPUT_DIR="${XDG_VIDEOS_DIR:-$HOME/Videos}"
+RUNTIME="${XDG_RUNTIME_DIR:-/tmp}"
+
+DESK_SOURCE="alsa_output.usb-Logitech_G733_Gaming_Headset-00.analog-stereo.monitor"
+MIC_SOURCE="alsa_input.usb-0c76_USB_PnP_Audio_Device-00.mono-fallback"
+
+mkdir -p "$OUTPUT_DIR"
+FINAL="$OUTPUT_DIR/rec-$(date +'%Y-%m-%d_%H-%M-%S').mkv"
+VIDEO_TMP="$RUNTIME/record-screen-video.mkv"
+AUDIO_TMP="$RUNTIME/record-screen-audio.mkv"
+
+# Wipe any stale temp files from a crashed previous run.
+rm -f "$VIDEO_TMP" "$AUDIO_TMP"
+
+# Record own pid so record-screen can find us.
+echo $$ > "$RUNTIME/record-screen-daemon.pid"
+
+cleanup() {
+  rm -f "$RUNTIME/record-screen-daemon.pid"
+  rm -f "$VIDEO_TMP" "$AUDIO_TMP"
+}
+trap cleanup EXIT
+
+# ---------------------------------------------------------------------------
+# Geometry pick
+# ---------------------------------------------------------------------------
+if [[ $REGION_MODE == 1 ]]; then
+  GEOS=$(hyprctl monitors -j | jq -r '.[] | "\(.x),\(.y) \(.width)x\(.height)"')
+  GEOS+=$'\n'
+  WS_LIST=$(hyprctl monitors -j | jq -r '.[] | .activeWorkspace.id' | paste -sd, -)
+  GEOS+=$(hyprctl clients -j | jq -r --arg ws "$WS_LIST" '[.[] | select(.mapped == true and .hidden != true and (.workspace.id as $w | $ws | split(",") | map(tonumber) | index($w) != null)) | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"] | unique[]')
+  hyprpicker -r -z >/dev/null 2>&1 &
+  FREEZE_PID=$!
+  sleep .1
+  if ! GEO=$(echo "$GEOS" | slurp -r 2>/dev/null); then
+    GEO=""
+  fi
+  kill "$FREEZE_PID" 2>/dev/null || true
+  if [[ -z $GEO ]]; then
+    echo "Region pick cancelled" >&2
+    exit 1
+  fi
+else
+  GEO=$(hyprctl monitors -j | jq -r '.[] | select(.focused==true) | "\(.x),\(.y) \(.width)x\(.height)"' | head -1)
+  [[ -z $GEO ]] && GEO="0,0 1600x900"
+fi
+
+AINFO="no audio"
+case $AUDIO_MODE in
+  desktop) AINFO="desktop audio" ;;
+  mic)     AINFO="microphone audio" ;;
+  both)    AINFO="3 audio tracks: desktop, mic, mix" ;;
+esac
+
+# ---------------------------------------------------------------------------
+# Start capture processes
+# ---------------------------------------------------------------------------
+# Video: wf-recorder, no audio.
+wf-recorder -g "$GEO" -r 60 -c libx264 -p preset=veryfast -p crf=20 \
+  -f "$VIDEO_TMP" >"/dev/null" 2>&1 &
+WFPID=$!
+
+# Audio: ffmpeg multi-track per mode.
+#   desktop -> track 1: desktop only
+#   mic     -> track 1: mic only (mono -> stereo)
+#   both    -> tracks: desktop, mic, and a unified mix (amix) of both.
+FFPID=""
+if [[ $AUDIO_MODE != none ]]; then
+  FF_ARGS=(-y)
+  MIX_FILTER=""
+  case $AUDIO_MODE in
+    desktop)
+      FF_ARGS+=( -f pulse -i "$DESK_SOURCE" )
+      MAP_ARGS=(-map 0:a:0)
+      ;;
+    mic)
+      FF_ARGS+=( -f pulse -i "$MIC_SOURCE" )
+      MAP_ARGS=(-filter_complex "[0:a]pan=stereo|c0=c0|c1=c0[mix]" -map "[mix]")
+      ;;
+    both)
+      FF_ARGS+=( -f pulse -i "$DESK_SOURCE" -f pulse -i "$MIC_SOURCE" )
+      MIX_FILTER="[0:a]aformat=sample_rates=48000,pan=stereo|c0=c0|c1=c0,asplit=2[deskP][deskM];[1:a]aformat=sample_rates=48000,pan=stereo|c0=c0|c1=c0,asplit=2[micP][micM];[deskM][micM]amix=inputs=2:duration=longest:normalize=0[mix]"
+      MAP_ARGS=(-filter_complex "$MIX_FILTER" -map "[deskP]" -map "[micP]" -map "[mix]")
+      ;;
+  esac
+  ffmpeg "${FF_ARGS[@]}" "${MAP_ARGS[@]}" \
+    -c:a aac -ac 2 "$AUDIO_TMP" >/dev/null 2>&1 &
+  FFPID=$!
+fi
+
+# Notify right away so the user gets instant feedback; the health check below
+# still catches a failed start and reports it afterwards.
+omarchy-notification-send -t 3000 "Recording started" "$GEO @ 60fps ($AINFO)"
+
+sleep 3
+if ! kill -0 "$WFPID" 2>/dev/null; then
+  [[ -n $FFPID ]] && kill "$FFPID" 2>/dev/null || true
+  echo "recording failed" >&2
+  omarchy-notification-send -u critical -t 5000 "Recording failed" "wf-recorder could not start"
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Wait for the toggle to interrupt video recording, then finalize.
+# ---------------------------------------------------------------------------
+while kill -0 "$WFPID" 2>/dev/null; do
+  sleep 1
+done
+
+# wf-recorder ended (SIGINT from record-screen). Stop audio capture cleanly.
+if [[ -n $FFPID ]] && kill -0 "$FFPID" 2>/dev/null; then
+  kill -INT "$FFPID" 2>/dev/null || true
+  # Give ffmpeg a moment to finalize its container.
+  for _ in $(seq 1 20); do
+    kill -0 "$FFPID" 2>/dev/null || break
+    sleep 0.2
+  done
+  kill "$FFPID" 2>/dev/null || true
+fi
+sleep 0.5
+
+# ---------------------------------------------------------------------------
+# Mux video + audio track(s) into the final MKV.
+# ---------------------------------------------------------------------------
+if [[ $AUDIO_MODE == none ]]; then
+  mv "$VIDEO_TMP" "$FINAL"
+else
+  # Give each audio track a clear title (indexed per mode) so editors and
+  # players show which one is which.
+  case $AUDIO_MODE in
+    desktop) TRACK_TITLES=(-metadata:s:a:0 "title=Desktop") ;;
+    mic)     TRACK_TITLES=(-metadata:s:a:0 "title=Microphone") ;;
+    both)    TRACK_TITLES=(-metadata:s:a:0 "title=Desktop" -metadata:s:a:1 "title=Microphone" -metadata:s:a:2 "title=Mix") ;;
+  esac
+  ffmpeg -y -i "$VIDEO_TMP" -i "$AUDIO_TMP" \
+    -map 0:v:0 -map 1:a -c copy "${TRACK_TITLES[@]}" "$FINAL" \
+    >/dev/null 2>&1 || {
+      echo "mux failed, keeping separables" >&2
+      mv "$VIDEO_TMP" "${FINAL%.mkv}.video.mkv"
+      mv "$AUDIO_TMP" "${FINAL%.mkv}.audio.mkv"
+    }
+fi
+
+exit 0
