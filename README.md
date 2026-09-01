@@ -6,6 +6,25 @@ A custom adaptation of a screen recorder for Hyprland/Omarchy, designed to avoid
 
 > Built for Omarchy (Hyprland + Quickshell) and optimized for hardware setups where `gpu-screen-recorder` fails because of VCE encoder instability.
 
+## Quick start
+
+```bash
+git clone https://github.com/TEEBAANDEV/omarchy-capture-wf.git
+cd omarchy-capture-wf
+chmod +x install.sh
+./install.sh
+```
+
+Then use:
+
+```bash
+record-screen
+record-screen --region
+record-screen --audio mic
+```
+
+> Note: the plugin name in this project is generated from your local Linux username. All commands below use `$(id -un)` so they work as-is when you paste them into a shell. For example, that makes the plugin path `~/.config/omarchy/plugins/<your-name>.indicators/`.
+
 ---
 
 ## English
@@ -61,25 +80,26 @@ If you are installing your own GitHub fork, replace `TEEBAANDEV` with your GitHu
 git clone https://github.com/<your-user>/omarchy-capture-wf.git
 ```
 
-The installer is idempotent and safe to re-run. It creates the following components, asks the running shell to add the indicator widget to the bar (`omarchy bar put <user>.indicators`), and appends the keybindings below to `~/.config/hypr/bindings.lua` **only if** they are not already present:
+The installer is idempotent and safe to re-run. It creates the following components, asks the running shell to add the indicator widget to the bar using your local Linux username (that is, `omarchy bar put $(id -un).indicators`), and appends the keybindings below to `~/.config/hypr/bindings.lua` **only if** they are not already present:
 
 | Component | Destination |
 | --- | --- |
 | `record-screen` / `record-screen-daemon` | `~/.local/bin` |
-| Bar indicator plugin | `~/.config/omarchy/plugins/<user>.indicators/` |
+| Bar indicator plugin | `~/.config/omarchy/plugins/$(id -un).indicators/` |
 | Menu override (Start/Stop) | `~/.config/omarchy/extensions/` |
 | Proxy `omarchy-capture-screenrecording` | `~/.config/omarchy/bin/` |
 | PATH override | `~/.config/environment.d/` |
 
-> Note: the `environment.d` PATH override takes effect on the next login because the active Quickshell session does not reload `PATH` changes mid-session. If the bar indicator does not detect the proxy, log out and log back in.
+> Note: use your local Linux username in `~/.config/omarchy/plugins/$(id -un).indicators/`, not your GitHub username. Let `$(id -un)` do the substitution for you.
+>
+> The `environment.d` PATH override takes effect on the next login because the active Quickshell session does not reload `PATH` changes mid-session. If the bar indicator does not detect the proxy, log out and log back in.
 
 ### Keybindings
 
-These are added by the installer when absent, so **no manual step is needed**. They use absolute paths so they work before the updated PATH is active:
+These are added by the installer when absent, so **no manual step is needed**. They use absolute paths so they work before the updated PATH is active. To see the exact lines that were written, resolve them in a shell:
 
-```lua
-o.bind("SUPER + SHIFT + R", "Screen recording toggle", "~/.local/bin/record-screen")
-o.bind("SUPER + SHIFT + ALT + R", "Screen recording region", "~/.local/bin/record-screen --region")
+```bash
+grep "record-screen" ~/.config/hypr/bindings.lua
 ```
 
 The default Omarchy `ALT + PRINT` binding also routes through the proxy automatically after the next login.
@@ -141,10 +161,10 @@ Audio and video are captured separately. The desktop and mic inputs are captured
 
 **The recording icon does not appear in the bar.**
 
-If it was missing when the installer ran (shell not ready), add it manually:
+If it was missing when the installer ran (shell not ready), add it manually. This resolves the plugin path automatically:
 
 ```bash
-omarchy bar put <user>.indicators --section center --before omarchy.clock
+omarchy bar put "$(id -un).indicators" --section center --before omarchy.clock
 ```
 
 Then rescan plugins: `omarchy-shell shell rescanPlugins`. The widget hot-reloads on save.
@@ -167,11 +187,13 @@ The script redirects `wf-recorder` and `ffmpeg` stderr there, which is the best 
 
 ```bash
 rm -f ~/.local/bin/record-screen ~/.local/bin/record-screen-daemon
-rm -rf ~/.config/omarchy/plugins/<user>.indicators
+rm -rf ~/.config/omarchy/plugins/"$(id -un).indicators"
 rm -f ~/.config/omarchy/extensions/omarchy-menu.jsonc
 rm -f ~/.config/omarchy/bin/omarchy-capture-screenrecording
 rm -f ~/.config/environment.d/record-screen-path.conf
 ```
+
+Also remove the two custom keybindings and restart the session so the `PATH` override is cleared.
 
 Also remove the two custom keybindings and restart the session so the `PATH` override is cleared.
 
@@ -236,14 +258,14 @@ Si usas un fork o un repositorio con otro nombre de usuario, solo cambia la part
 git clone https://github.com/<tu-usuario>/omarchy-capture-wf.git
 ```
 
-El instalador es idempotente y se puede ejecutar varias veces sin problemas. Crea los siguientes componentes, pide al shell activo que añada el widget del indicador a la barra (`omarchy bar put <usuario>.indicators`) y añade los atajos de abajo a `~/.config/hypr/bindings.lua` **solo si** no están ya presentes:
+El instalador es idempotente y se puede ejecutar varias veces sin problemas. Crea los siguientes componentes, pide al shell activo que añada el widget del indicador a la barra usando tu usuario local de Linux (es decir, `omarchy bar put $(id -un).indicators`) y añade los atajos de abajo a `~/.config/hypr/bindings.lua` **solo si** no están ya presentes:
 
-> Nota: el usuario de GitHub en la URL del clon no es lo mismo que el usuario del sistema Linux que usa el instalador. El nombre del plugin se genera a partir del usuario local, así que normalmente queda en `~/.config/omarchy/plugins/<usuario-linux>.indicators/`.
+> Nota: el usuario de GitHub en la URL del clon no es el usuario del sistema Linux que usa el instalador. El nombre del plugin se genera a partir del usuario local, así que normalmente queda en `~/.config/omarchy/plugins/$(id -un).indicators/`. Deja que `$(id -un)` haga la sustitución por ti.
 
 | Componente | Destino |
 | --- | --- |
 | `record-screen` / `record-screen-daemon` | `~/.local/bin` |
-| Plugin del indicador de barra | `~/.config/omarchy/plugins/<usuario>.indicators/` |
+| Plugin del indicador de barra | `~/.config/omarchy/plugins/$(id -un).indicators/` |
 | Override del menú (Iniciar/Detener) | `~/.config/omarchy/extensions/` |
 | Proxy `omarchy-capture-screenrecording` | `~/.config/omarchy/bin/` |
 | Override de PATH | `~/.config/environment.d/` |
@@ -252,11 +274,10 @@ El instalador es idempotente y se puede ejecutar varias veces sin problemas. Cre
 
 ### Atajos de teclado
 
-El instalador los añade si no existen, así que **no hace falta ningún paso manual**. Usan rutas absolutas para que funcionen antes de que el nuevo `PATH` esté activo:
+El instalador los añade si no existen, así que **no hace falta ningún paso manual**. Usan rutas absolutas para que funcionen antes de que el nuevo `PATH` esté activo. Para ver las líneas exactas que se escribieron, resuélvelas en un shell:
 
-```lua
-o.bind("SUPER + SHIFT + R", "Screen recording toggle", "~/.local/bin/record-screen")
-o.bind("SUPER + SHIFT + ALT + R", "Screen recording region", "~/.local/bin/record-screen --region")
+```bash
+grep "record-screen" ~/.config/hypr/bindings.lua
 ```
 
 El atajo predeterminado de Omarchy `ALT + PRINT` también pasa por el proxy automáticamente tras el próximo inicio de sesión.
@@ -318,10 +339,10 @@ El audio y el video se capturan por separado. El escritorio y el micrófono se g
 
 **El icono de grabación no aparece en la barra.**
 
-Si no estaba al ejecutar el instalador (shell no disponible), añádelo manualmente:
+Si no estaba al ejecutar el instalador (shell no disponible), añádelo manualmente. Este comando resuelve la ruta del plugin automáticamente:
 
 ```bash
-omarchy bar put <usuario>.indicators --section center --before omarchy.clock
+omarchy bar put "$(id -un).indicators" --section center --before omarchy.clock
 ```
 
 Luego re-escanea los plugins: `omarchy-shell shell rescanPlugins`. El widget se recarga automáticamente al guardar.
@@ -344,7 +365,7 @@ El script redirige el stderr de `wf-recorder` y `ffmpeg` allí, y suele ser el m
 
 ```bash
 rm -f ~/.local/bin/record-screen ~/.local/bin/record-screen-daemon
-rm -rf ~/.config/omarchy/plugins/<usuario>.indicators
+rm -rf ~/.config/omarchy/plugins/"$(id -un).indicators"
 rm -f ~/.config/omarchy/extensions/omarchy-menu.jsonc
 rm -f ~/.config/omarchy/bin/omarchy-capture-screenrecording
 rm -f ~/.config/environment.d/record-screen-path.conf
